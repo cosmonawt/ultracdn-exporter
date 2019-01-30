@@ -138,8 +138,9 @@ retry:
 //aggregate(sum(di-m8fg6caj.*.*.*.requestscount), '5min', 'sum', 'true')
 
 type metric struct {
-	Target string  `json:"target"`
-	Points []point `json:"points"`
+	GroupID string
+	Target  string  `json:"target"`
+	Points  []point `json:"points"`
 }
 
 type point struct {
