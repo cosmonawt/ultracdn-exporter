@@ -12,18 +12,13 @@ import (
 const apiURL = "https://api.leasewebultracdn.com"
 
 type client struct {
-	username     string
-	password     string
-	customerID   string
-	ApiToken     string `json:"access_token"`
-	RefreshToken string `json:"refresh_token"`
+	username   string
+	password   string
+	customerID string
+	ApiToken   string `json:"access_token"`
 }
 
-func (c *client) login(username, password string) {
-	if username != "" && password != "" {
-		c.username = username
-		c.password = password
-	}
+func (c *client) login(username, password string) error {
 	if c.username == "" {
 		log.Fatal("no username provided")
 	}
@@ -38,46 +33,40 @@ func (c *client) login(username, password string) {
 
 	req, err := http.NewRequest(http.MethodPost, apiURL+"/auth/token", strings.NewReader(form.Encode()))
 	if err != nil {
-		log.Fatalf("could not create initial login request: %v", err)
+		return fmt.Errorf("error creating request: %v", err)
 	}
 	req.Header.Add("Content-Type", "application/x-www-form-urlencoded")
 	req.Header.Add("Accept", "application/json")
 	res, err := http.DefaultClient.Do(req)
 	if err != nil {
-		log.Fatalf("could not login: %v", err)
+		return fmt.Errorf("error making request: %v", err)
 	}
 	defer res.Body.Close()
 
 	if res.StatusCode != http.StatusOK {
-		log.Fatalf("could not login, status: %d", res.StatusCode)
+		return fmt.Errorf("non 2xx status: %d", res.StatusCode)
 	}
 
 	if err = json.NewDecoder(res.Body).Decode(&c); err != nil {
-		log.Fatalf("could not login: %v", err)
+		return fmt.Errorf("error decoding response: %v", err)
 	}
+	return nil
 }
 
-func (c *client) getCustomerID() string {
-retry:
+func (c *client) getCustomerID() (string, error) {
 	req, err := http.NewRequest(http.MethodGet, apiURL+"/self", nil)
 	if err != nil {
-		log.Fatal("could not get self: %v", err)
+		return "", fmt.Errorf("error creating request: %v", err)
 	}
 	req.Header.Add("Authorization", "Bearer "+c.ApiToken)
 	res, err := http.DefaultClient.Do(req)
 	if err != nil {
-		log.Fatal("could not get self: %v", err)
+		return "", fmt.Errorf("error making request: %v", err)
 	}
 	defer res.Body.Close()
 
 	if res.StatusCode != http.StatusOK {
-		if res.StatusCode == http.StatusUnauthorized {
-			log.Fatal("relogin")
-			c.login("", "")
-			res.Body.Close()
-			goto retry // lets hope this wont blow up :D
-		}
-		log.Fatalf("could not get self, status: %d", res.StatusCode)
+		return "", fmt.Errorf("non 2xx status: %d", res.StatusCode)
 	}
 
 	s := struct {
@@ -87,11 +76,11 @@ retry:
 	}{}
 
 	if err = json.NewDecoder(res.Body).Decode(&s); err != nil {
-		log.Fatalf("could not get self: %v", err)
+		return "", fmt.Errorf("error decoding response: %v", err)
 	}
 
 	c.customerID = s.Response.CustomerID
-	return c.customerID
+	return c.customerID, nil
 }
 
 type distributionGroup struct {
@@ -100,27 +89,20 @@ type distributionGroup struct {
 	Domain string `json:"domain"`
 }
 
-func (c *client) getDistributionGroups(customerID string) []distributionGroup {
-retry:
+func (c *client) getDistributionGroups(customerID string) ([]distributionGroup, error) {
 	req, err := http.NewRequest(http.MethodGet, apiURL+"/"+customerID+"/config/distributiongroups", nil)
 	if err != nil {
-		log.Fatal("could not get distributiongroups: %v", err)
+		return nil, fmt.Errorf("error creating request: %v", err)
 	}
 	req.Header.Add("Authorization", "Bearer "+c.ApiToken)
 	res, err := http.DefaultClient.Do(req)
 	if err != nil {
-		log.Fatal("could not get distributiongroups: %v", err)
+		return nil, fmt.Errorf("error making request: %v", err)
 	}
 	defer res.Body.Close()
 
 	if res.StatusCode != http.StatusOK {
-		if res.StatusCode == http.StatusUnauthorized {
-			log.Fatal("relogin")
-			c.login("", "")
-			res.Body.Close()
-			goto retry // lets hope this wont blow up :D
-		}
-		log.Fatalf("could not get distributiongroups, status: %d", res.StatusCode)
+		return nil, fmt.Errorf("non 2xx status: %d", res.StatusCode)
 	}
 
 	s := struct {
@@ -128,14 +110,11 @@ retry:
 	}{}
 
 	if err = json.NewDecoder(res.Body).Decode(&s); err != nil {
-		log.Fatalf("could not get self: %v", err)
+		return nil, fmt.Errorf("error decoding response: %v", err)
 	}
 
-	return s.Response
+	return s.Response, nil
 }
-
-// alias(aggregate(sum(*.*.*.*.bytesdelivered),'1mon', 'sum', 'true'), 'bytesdelivered')
-//aggregate(sum(di-m8fg6caj.*.*.*.requestscount), '5min', 'sum', 'true')
 
 type metric struct {
 	GroupID string
@@ -148,10 +127,10 @@ type point struct {
 	Timestamp int     `json:"timestamp"`
 }
 
-func (c *client) gatherMetrics(distributionGroupID string) []metric {
+func (c *client) gatherMetrics(distributionGroupID string) ([]metric, error) {
 	form := url.Values{}
 	form.Add("start", "-30min")
-	form.Add("end", "-20min") // Leasweb Aggregates in 5minute intervals, to make sure we dont scrape 0, we have a lag of 20 minutes.
+	form.Add("end", "-20min") // Leaseweb aggregates in 5 minute intervals, to make sure we dont scrape 0, we have a lag of 20 minutes.
 	form.Add("target", fmt.Sprintf("alias(aggregate(sum(%s.*.*.*.bytesdelivered),'5min', 'sum', 'true'), 'bytesdelivered')", distributionGroupID))
 	form.Add("target", fmt.Sprintf("alias(aggregate(sum(%s.*.*.*.requestscount),'5min', 'sum', 'true'), 'requestscount')", distributionGroupID))
 	form.Add("target", fmt.Sprintf("alias(aggregate(sum(%s.*.*.*.bandwidthbps),'5min', 'sum', 'true'), 'bandwidthbps')", distributionGroupID))
@@ -162,19 +141,19 @@ func (c *client) gatherMetrics(distributionGroupID string) []metric {
 
 	req, err := http.NewRequest(http.MethodPost, apiURL+"/"+c.customerID+"/query", strings.NewReader(form.Encode()))
 	if err != nil {
-		log.Fatalf("could not create query request: %v", err)
+		return nil, fmt.Errorf("error creating request: %v", err)
 	}
 	req.Header.Add("Content-Type", "application/x-www-form-urlencoded")
 	req.Header.Add("Accept", "application/json")
 	req.Header.Add("Authorization", "Bearer "+c.ApiToken)
 	res, err := http.DefaultClient.Do(req)
 	if err != nil {
-		log.Fatalf("could not query: %v", err)
+		return nil, fmt.Errorf("error making request: %v", err)
 	}
 	defer res.Body.Close()
 
 	if res.StatusCode != http.StatusOK {
-		log.Fatalf("could not query, status: %d", res.StatusCode)
+		return nil, fmt.Errorf("non 2xx status: %d", res.StatusCode)
 	}
 
 	mr := struct {
@@ -182,8 +161,8 @@ func (c *client) gatherMetrics(distributionGroupID string) []metric {
 	}{}
 
 	if err = json.NewDecoder(res.Body).Decode(&mr); err != nil {
-		log.Fatalf("could not query: %v", err)
+		return nil, fmt.Errorf("error decoding response: %v", err)
 	}
 
-	return mr.Response
+	return mr.Response, nil
 }

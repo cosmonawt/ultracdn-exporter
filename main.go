@@ -7,56 +7,57 @@ import (
 	"net/http"
 )
 
-const promNamespace = "leaseweb"
+const (
+	promNamespace = "leaseweb"
+	promSubsystem = "ultracdn"
+)
 
 var (
 	bytesDelivered = prometheus.NewGaugeVec(prometheus.GaugeOpts{
 		Namespace: promNamespace,
+		Subsystem: promSubsystem,
 		Name:      "delivered_bytes",
 		Help:      "Total number of bytes delivered in the last 5 minutes.",
 	}, []string{"distribution_id", "distribution_name"})
 	requestsCount = prometheus.NewGaugeVec(prometheus.GaugeOpts{
 		Namespace: promNamespace,
+		Subsystem: promSubsystem,
 		Name:      "requests_total",
 		Help:      "Total number of requests received in the last 5 minutes.",
 	}, []string{"distribution_id", "distribution_name"})
 	bandwidthbps = prometheus.NewGaugeVec(prometheus.GaugeOpts{
 		Namespace: promNamespace,
+		Subsystem: promSubsystem,
 		Name:      "bandwidth_per_second_bytes",
 		Help:      "Total bandwidth per second summarized over the last 5 minutes.",
 	}, []string{"distribution_id", "distribution_name"})
 	cachehitRequests = prometheus.NewGaugeVec(prometheus.GaugeOpts{
 		Namespace: promNamespace,
+		Subsystem: promSubsystem,
 		Name:      "cachehits_per_requests_ratio",
 		Help:      "Ratio of cachehits per requests in the last 5 minutes.",
 	}, []string{"distribution_id", "distribution_name"})
 	statusCode2xxCount = prometheus.NewGaugeVec(prometheus.GaugeOpts{
 		Namespace: promNamespace,
+		Subsystem: promSubsystem,
 		Name:      "status_2xx_total",
 		Help:      "Total number of 2xx status codes sent in the last 5 minutes.",
 	}, []string{"distribution_id", "distribution_name"})
 	statusCode4xxCount = prometheus.NewGaugeVec(prometheus.GaugeOpts{
 		Namespace: promNamespace,
+		Subsystem: promSubsystem,
 		Name:      "status_4xx_total",
 		Help:      "Total number of 4xx status codes sent in the last 5 minutes.",
 	}, []string{"distribution_id", "distribution_name"})
 	statusCode5xxCount = prometheus.NewGaugeVec(prometheus.GaugeOpts{
 		Namespace: promNamespace,
+		Subsystem: promSubsystem,
 		Name:      "status_5xx_total",
 		Help:      "Total number of 5xx status codes sent in the last 5 minutes.",
 	}, []string{"distribution_id", "distribution_name"})
 )
 
-//	bytesdelivered
-//	requestscount
-//	bandwidthbps
-//	cachehit_requests
-//	statuscode_2xx_count
-//	statuscode_4xx_count
-//	statuscode_5xx_count
-
-func main() {
-
+func init() {
 	prometheus.MustRegister(bytesDelivered)
 	prometheus.MustRegister(requestsCount)
 	prometheus.MustRegister(bandwidthbps)
@@ -64,8 +65,10 @@ func main() {
 	prometheus.MustRegister(statusCode2xxCount)
 	prometheus.MustRegister(statusCode4xxCount)
 	prometheus.MustRegister(statusCode5xxCount)
+}
 
-	collectors := map[string]*prometheus.GaugeVec{
+func main() {
+	metrics := map[string]*prometheus.GaugeVec{
 		"bytesdelivered":       bytesDelivered,
 		"requestscount":        requestsCount,
 		"bandwidthbps":         bandwidthbps,
@@ -76,19 +79,28 @@ func main() {
 	}
 
 	c := client{}
-	c.login("", "")
-	log.Printf("%+v\n", c)
+	err := c.login("", "")
+	if err != nil {
+		log.Fatalf("error logging in: %v", err)
+	}
 
-	cid := c.getCustomerID()
-	log.Printf("%s\n", cid)
+	cid, err := c.getCustomerID()
+	if err != nil {
+		log.Fatalf("error getting customerID: %v", err)
+	}
 
-	dd := c.getDistributionGroups(cid)
-	log.Printf("%+v\n", dd)
+	dd, err := c.getDistributionGroups(cid)
+	if err != nil {
+		log.Fatalf("error getting distribution groups: %v", err)
+	}
 
 	for _, d := range dd {
-		mm := c.gatherMetrics(d.ID)
+		mm, err := c.gatherMetrics(d.ID)
+		if err != nil {
+			log.Fatalf("error getting metrics for distribution group %s: %v", d.ID, err)
+		}
 		for _, m := range mm {
-			collectors[m.Target].WithLabelValues(d.ID, d.Name).Set(m.Points[1].Value)
+			metrics[m.Target].WithLabelValues(d.ID, d.Name).Set(m.Points[1].Value)
 		}
 	}
 
