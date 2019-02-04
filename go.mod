@@ -1,4 +1,4 @@
-module github.com/cosmonawt/leaseweb-ultracdn-exporter
+module github.com/cosmonawt/ultracdn-exporter
 
 require (
 	github.com/go-logfmt/logfmt v0.4.0 // indirect

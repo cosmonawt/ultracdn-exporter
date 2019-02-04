@@ -1,4 +1,4 @@
-# leaseweb-ultracdn-exporter
+# ultracdn-exporter
 
 A Prometheus exporter for Leaseweb UltraCDN Metrics.
 
