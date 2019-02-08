@@ -1,18 +1,12 @@
 package main
 
 import (
-	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"log"
 	"net/http"
 )
 
-const (
-	promNamespace = "leaseweb"
-	promSubsystem = "ultracdn"
-)
-
-var (
+/*var (
 	bytesDelivered = prometheus.NewGaugeVec(prometheus.GaugeOpts{
 		Namespace: promNamespace,
 		Subsystem: promSubsystem,
@@ -55,31 +49,22 @@ var (
 		Name:      "status_5xx_total",
 		Help:      "Total number of 5xx status codes sent in the last 5 minutes.",
 	}, []string{"distribution_id", "distribution_name"})
-)
-
-func init() {
-	prometheus.MustRegister(bytesDelivered)
-	prometheus.MustRegister(requestsCount)
-	prometheus.MustRegister(bandwidthbps)
-	prometheus.MustRegister(cachehitRequests)
-	prometheus.MustRegister(statusCode2xxCount)
-	prometheus.MustRegister(statusCode4xxCount)
-	prometheus.MustRegister(statusCode5xxCount)
-}
+)*/
 
 func main() {
-	metrics := map[string]*prometheus.GaugeVec{
-		"bytesdelivered":       bytesDelivered,
-		"requestscount":        requestsCount,
-		"bandwidthbps":         bandwidthbps,
-		"cachehit_requests":    cachehitRequests,
-		"statuscode_2xx_count": statusCode2xxCount,
-		"statuscode_4xx_count": statusCode4xxCount,
-		"statuscode_5xx_count": statusCode5xxCount,
+	// These metrics will be collected for each Distributiongroup.
+	metrics := []string{
+		"bytesdelivered",
+		"requestscount",
+		"bandwidthbps",
+		"cachehit_requests",
+		"statuscode_2xx_count",
+		"statuscode_4xx_count",
+		"statuscode_5xx_count",
 	}
 
 	c := client{}
-	err := c.login("", "")
+	err := c.login("", "") // TODO: Read from ENV.
 	if err != nil {
 		log.Fatalf("error logging in: %v", err)
 	}
@@ -95,12 +80,12 @@ func main() {
 	}
 
 	for _, d := range dd {
-		mm, err := c.gatherMetrics(d.ID)
-		if err != nil {
-			log.Fatalf("error getting metrics for distribution group %s: %v", d.ID, err)
-		}
-		for _, m := range mm {
-			metrics[m.Target].WithLabelValues(d.ID, d.Name).Set(m.Points[1].Value)
+		for _, m := range metrics {
+			_, err := c.gatherMetrics(d.ID, m)
+			if err != nil {
+				log.Fatalf("error getting metric %s for distribution group %s: %v", m, d.ID, err)
+				//metrics[m.Target].WithLabelValues(d.ID, d.Name).Set(m.Points[1].Value)
+			}
 		}
 	}
 

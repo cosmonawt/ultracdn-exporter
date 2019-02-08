@@ -3,7 +3,7 @@ package main
 import (
 	"encoding/json"
 	"fmt"
-	"github.com/prometheus/common/log"
+	"log"
 	"net/http"
 	"net/url"
 	"strings"
@@ -12,23 +12,21 @@ import (
 const apiURL = "https://api.leasewebultracdn.com"
 
 type client struct {
-	username   string
-	password   string
 	customerID string
-	ApiToken   string `json:"access_token"`
+	apiToken   string `json:"access_token"`
 }
 
 func (c *client) login(username, password string) error {
-	if c.username == "" {
+	if username == "" {
 		log.Fatal("no username provided")
 	}
-	if c.password == "" {
+	if password == "" {
 		log.Fatal("no password provided")
 	}
 
 	form := url.Values{}
-	form.Add("username", c.username)
-	form.Add("password", c.password)
+	form.Add("username", username)
+	form.Add("password", password)
 	form.Add("grant_type", "password")
 
 	req, err := http.NewRequest(http.MethodPost, apiURL+"/auth/token", strings.NewReader(form.Encode()))
@@ -58,7 +56,7 @@ func (c *client) getCustomerID() (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("error creating request: %v", err)
 	}
-	req.Header.Add("Authorization", "Bearer "+c.ApiToken)
+	req.Header.Add("Authorization", "Bearer "+c.apiToken)
 	res, err := http.DefaultClient.Do(req)
 	if err != nil {
 		return "", fmt.Errorf("error making request: %v", err)
@@ -94,7 +92,7 @@ func (c *client) getDistributionGroups(customerID string) ([]distributionGroup, 
 	if err != nil {
 		return nil, fmt.Errorf("error creating request: %v", err)
 	}
-	req.Header.Add("Authorization", "Bearer "+c.ApiToken)
+	req.Header.Add("Authorization", "Bearer "+c.apiToken)
 	res, err := http.DefaultClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("error making request: %v", err)
@@ -127,33 +125,27 @@ type point struct {
 	Timestamp int     `json:"timestamp"`
 }
 
-func (c *client) gatherMetrics(distributionGroupID string) ([]metric, error) {
+func (c *client) gatherMetrics(distributionGroupID, metricName string) (metric, error) {
 	form := url.Values{}
 	form.Add("start", "-30min")
 	form.Add("end", "-20min") // Leaseweb aggregates in 5 minute intervals, to make sure we dont scrape 0, we have a lag of 20 minutes.
-	form.Add("target", fmt.Sprintf("alias(aggregate(sum(%s.*.*.*.bytesdelivered),'5min', 'sum', 'true'), 'bytesdelivered')", distributionGroupID))
-	form.Add("target", fmt.Sprintf("alias(aggregate(sum(%s.*.*.*.requestscount),'5min', 'sum', 'true'), 'requestscount')", distributionGroupID))
-	form.Add("target", fmt.Sprintf("alias(aggregate(sum(%s.*.*.*.bandwidthbps),'5min', 'sum', 'true'), 'bandwidthbps')", distributionGroupID))
-	form.Add("target", fmt.Sprintf("alias(aggregate(sum(%s.*.*.*.cachehit_requests),'5min', 'sum', 'true'), 'cachehit_requests')", distributionGroupID))
-	form.Add("target", fmt.Sprintf("alias(aggregate(sum(%s.*.*.*.statuscode_2xx_count),'5min', 'sum', 'true'), 'statuscode_2xx_count')", distributionGroupID))
-	form.Add("target", fmt.Sprintf("alias(aggregate(sum(%s.*.*.*.statuscode_4xx_count),'5min', 'sum', 'true'), 'statuscode_4xx_count')", distributionGroupID))
-	form.Add("target", fmt.Sprintf("alias(aggregate(sum(%s.*.*.*.statuscode_5xx_count),'5min', 'sum', 'true'), 'statuscode_5xx_count')", distributionGroupID))
+	form.Add("target", fmt.Sprintf("alias(aggregate(sum(%s.*.*.*.%s),'5min', 'sum', 'true'), '%[2]s')", distributionGroupID, metricName))
 
 	req, err := http.NewRequest(http.MethodPost, apiURL+"/"+c.customerID+"/query", strings.NewReader(form.Encode()))
 	if err != nil {
-		return nil, fmt.Errorf("error creating request: %v", err)
+		return metric{}, fmt.Errorf("error creating request: %v", err)
 	}
 	req.Header.Add("Content-Type", "application/x-www-form-urlencoded")
 	req.Header.Add("Accept", "application/json")
-	req.Header.Add("Authorization", "Bearer "+c.ApiToken)
+	req.Header.Add("Authorization", "Bearer "+c.apiToken)
 	res, err := http.DefaultClient.Do(req)
 	if err != nil {
-		return nil, fmt.Errorf("error making request: %v", err)
+		return metric{}, fmt.Errorf("error making request: %v", err)
 	}
 	defer res.Body.Close()
 
 	if res.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("non 2xx status: %d", res.StatusCode)
+		return metric{}, fmt.Errorf("non 2xx status: %d", res.StatusCode)
 	}
 
 	mr := struct {
@@ -161,8 +153,8 @@ func (c *client) gatherMetrics(distributionGroupID string) ([]metric, error) {
 	}{}
 
 	if err = json.NewDecoder(res.Body).Decode(&mr); err != nil {
-		return nil, fmt.Errorf("error decoding response: %v", err)
+		return metric{}, fmt.Errorf("error decoding response: %v", err)
 	}
 
-	return mr.Response, nil
+	return mr.Response[0], nil
 }
