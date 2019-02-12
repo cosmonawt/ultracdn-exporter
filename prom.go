@@ -3,7 +3,6 @@ package main
 import (
 	"github.com/prometheus/client_golang/prometheus"
 	"log"
-	"time"
 )
 
 var (
@@ -47,6 +46,8 @@ var descs = map[string]*prometheus.Desc{
 	"statuscode_5xx_count": statuscode_5xx_countDesc,
 }
 
+var cache = make(map[DistributionGroup]map[string]Metric)
+
 type ultraCDNCollector struct {
 	Client *Client
 }
@@ -56,26 +57,37 @@ func (c *ultraCDNCollector) Describe(ch chan<- *prometheus.Desc) {
 }
 
 func (c *ultraCDNCollector) Collect(ch chan<- prometheus.Metric) {
-	for _, dg := range c.Client.DistGroups {
-		for t, desc := range descs {
-			m, err := c.Client.FetchMetric(dg.ID, t)
+	for _, distGroup := range c.Client.DistGroups {
+		for target, desc := range descs {
+			metric, err := c.Client.FetchMetric(distGroup.ID, target)
 
 			if err != nil {
-				log.Printf("error fetching Metric %s for distributiongroup %s: %v", t, dg.ID, err)
+				log.Printf("error fetching Metric %s for distributiongroup %s: %v", target, distGroup.ID, err)
 				break
 			}
 
-			if len(m.Points) == 0 {
-				break
+			// If we can'target scrape metrics, we use the ones from cache to avoid a discontinued metric.
+			// If cache is empty, we use a 0 metric for the same reason.
+			if len(metric.Points) == 0 {
+				pp := cache[distGroup][target].Points
+				if len(pp) == 0 {
+					pp = []Point{{Value: float64(0.0)}}
+				}
+				metric.Points = pp
 			}
 
-			p := m.Points[0]
-			ch <- prometheus.NewMetricWithTimestamp(time.Unix(int64(p.Timestamp), 0),
-				prometheus.MustNewConstMetric(
-					desc,
-					prometheus.GaugeValue,
-					p.Value,
-					dg.Name, dg.ID))
+			// Cache latest entry
+			if cache[distGroup] == nil {
+				cache[distGroup] = map[string]Metric{}
+			}
+			cache[distGroup][target] = metric
+
+			p := metric.Points[0]
+			ch <- prometheus.MustNewConstMetric(
+				desc,
+				prometheus.GaugeValue,
+				p.Value,
+				distGroup.Name, distGroup.ID)
 		}
 	}
 }
