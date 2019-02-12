@@ -3,6 +3,7 @@ package main
 import (
 	"github.com/prometheus/client_golang/prometheus"
 	"log"
+	"time"
 )
 
 var (
@@ -49,7 +50,8 @@ var descs = map[string]*prometheus.Desc{
 var cache = make(map[DistributionGroup]map[string]Metric)
 
 type ultraCDNCollector struct {
-	Client *Client
+	Client           *Client
+	TimestampMetrics bool
 }
 
 func (c *ultraCDNCollector) Describe(ch chan<- *prometheus.Desc) {
@@ -74,7 +76,10 @@ func (c *ultraCDNCollector) Collect(ch chan<- prometheus.Metric) {
 			if len(metric.Points) == 0 {
 				pp := cache[distGroup][target].Points
 				if len(pp) == 0 {
-					pp = []Point{{Value: float64(0.0)}}
+					pp = []Point{{
+						Value:     float64(0.0),
+						Timestamp: int(time.Now().Unix()),
+					}}
 				}
 				metric.Points = pp
 			}
@@ -83,11 +88,17 @@ func (c *ultraCDNCollector) Collect(ch chan<- prometheus.Metric) {
 			cache[distGroup][target] = metric
 
 			p := metric.Points[0]
-			ch <- prometheus.MustNewConstMetric(
+			m := prometheus.MustNewConstMetric(
 				desc,
 				prometheus.GaugeValue,
 				p.Value,
 				distGroup.Name, distGroup.ID)
+
+			if c.TimestampMetrics {
+				m = prometheus.NewMetricWithTimestamp(time.Unix(int64(p.Timestamp), 0), m)
+			}
+
+			ch <- m
 		}
 	}
 }

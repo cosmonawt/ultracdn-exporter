@@ -22,6 +22,7 @@ func main() {
 	if password == "" {
 		log.Fatal("no password provided")
 	}
+	timestampMetrics := os.Getenv("TIMESTAMP_METRICS") == "true"
 
 	c := Client{}
 	err := c.Login(username, password)
@@ -30,7 +31,8 @@ func main() {
 	}
 
 	coll := &ultraCDNCollector{
-		Client: &c,
+		Client:           &c,
+		TimestampMetrics: timestampMetrics,
 	}
 
 	// Call Login every hour to stay logged in.
