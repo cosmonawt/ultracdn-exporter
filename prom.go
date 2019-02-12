@@ -58,9 +58,12 @@ func (c *ultraCDNCollector) Describe(ch chan<- *prometheus.Desc) {
 
 func (c *ultraCDNCollector) Collect(ch chan<- prometheus.Metric) {
 	for _, distGroup := range c.Client.DistGroups {
+		if cache[distGroup] == nil {
+			cache[distGroup] = map[string]Metric{}
+		}
+
 		for target, desc := range descs {
 			metric, err := c.Client.FetchMetric(distGroup.ID, target)
-
 			if err != nil {
 				log.Printf("error fetching Metric %s for distributiongroup %s: %v", target, distGroup.ID, err)
 				break
@@ -77,9 +80,6 @@ func (c *ultraCDNCollector) Collect(ch chan<- prometheus.Metric) {
 			}
 
 			// Cache latest entry
-			if cache[distGroup] == nil {
-				cache[distGroup] = map[string]Metric{}
-			}
 			cache[distGroup][target] = metric
 
 			p := metric.Points[0]
