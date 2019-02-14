@@ -77,7 +77,7 @@ func (c *ultraCDNCollector) Collect(ch chan<- prometheus.Metric) {
 
 		for target, desc := range descs {
 			wg.Add(1)
-			go func(target string, desc *prometheus.Desc) {
+			go func(distGroup DistributionGroup, target string, desc *prometheus.Desc) {
 				metric, err := c.Client.FetchMetric(distGroup.ID, target)
 				if err != nil {
 					log.Printf("error fetching Metric %s for distributiongroup %s: %v", target, distGroup.ID, err)
@@ -117,8 +117,8 @@ func (c *ultraCDNCollector) Collect(ch chan<- prometheus.Metric) {
 
 				ch <- m
 				wg.Done()
-			}(target, desc)
-			wg.Wait()
+			}(distGroup, target, desc)
 		}
 	}
+	wg.Wait()
 }
