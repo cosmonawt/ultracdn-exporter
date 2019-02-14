@@ -79,7 +79,6 @@ func (c *ultraCDNCollector) Collect(ch chan<- prometheus.Metric) {
 			wg.Add(1)
 			go func(target string, desc *prometheus.Desc) {
 				metric, err := c.Client.FetchMetric(distGroup.ID, target)
-
 				if err != nil {
 					log.Printf("error fetching Metric %s for distributiongroup %s: %v", target, distGroup.ID, err)
 					return
@@ -87,10 +86,10 @@ func (c *ultraCDNCollector) Collect(ch chan<- prometheus.Metric) {
 
 				// If we can'target scrape metrics, we use the ones from cache to avoid a discontinued metric.
 				// If cache is empty, we use a 0 metric for the same reason.
-				cache.Lock()
-				defer cache.Unlock()
 				if len(metric.Points) == 0 {
+					cache.RLock()
 					pp := cache.c[distGroup][target].Points
+					cache.RUnlock()
 					if len(pp) == 0 {
 						pp = []Point{{
 							Value:     float64(0.0),
@@ -101,7 +100,9 @@ func (c *ultraCDNCollector) Collect(ch chan<- prometheus.Metric) {
 				}
 
 				// Cache latest entry
+				cache.Lock()
 				cache.c[distGroup][target] = metric
+				cache.Unlock()
 
 				p := metric.Points[0]
 				m := prometheus.MustNewConstMetric(
