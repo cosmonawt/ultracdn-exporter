@@ -67,6 +67,7 @@ func (c *ultraCDNCollector) Describe(ch chan<- *prometheus.Desc) {
 }
 
 func (c *ultraCDNCollector) Collect(ch chan<- prometheus.Metric) {
+	wg := sync.WaitGroup{}
 	for _, distGroup := range c.Client.DistGroups {
 		cache.Lock()
 		if cache.c[distGroup] == nil {
@@ -75,7 +76,8 @@ func (c *ultraCDNCollector) Collect(ch chan<- prometheus.Metric) {
 		cache.Unlock()
 
 		for target, desc := range descs {
-			go func(target string, desc *prometheus.Desc, ch chan<- prometheus.Metric) {
+			wg.Add(1)
+			go func(target string, desc *prometheus.Desc) {
 				metric, err := c.Client.FetchMetric(distGroup.ID, target)
 
 				if err != nil {
@@ -85,6 +87,8 @@ func (c *ultraCDNCollector) Collect(ch chan<- prometheus.Metric) {
 
 				// If we can'target scrape metrics, we use the ones from cache to avoid a discontinued metric.
 				// If cache is empty, we use a 0 metric for the same reason.
+				cache.Lock()
+				defer cache.Unlock()
 				if len(metric.Points) == 0 {
 					pp := cache.c[distGroup][target].Points
 					if len(pp) == 0 {
@@ -111,7 +115,9 @@ func (c *ultraCDNCollector) Collect(ch chan<- prometheus.Metric) {
 				}
 
 				ch <- m
-			}(target, desc, ch)
+				wg.Done()
+			}(target, desc)
+			wg.Wait()
 		}
 	}
 }
