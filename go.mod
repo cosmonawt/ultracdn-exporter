@@ -1,4 +1,4 @@
-module github.com/cosmonawt/ultracdn-exporter
+module github.com/Jodel/ultracdn-exporter
 
 require (
 	github.com/go-logfmt/logfmt v0.4.0 // indirect
