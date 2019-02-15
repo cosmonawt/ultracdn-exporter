@@ -3,6 +3,7 @@ package main
 import (
 	"github.com/prometheus/client_golang/prometheus"
 	"log"
+	"sync"
 	"time"
 )
 
@@ -47,7 +48,14 @@ var descs = map[string]*prometheus.Desc{
 	"statuscode_5xx_count": statuscode_5xx_countDesc,
 }
 
-var cache = make(map[DistributionGroup]map[string]Metric)
+type metricCache struct {
+	c map[DistributionGroup]map[string]Metric
+	sync.RWMutex
+}
+
+var cache = metricCache{
+	c: make(map[DistributionGroup]map[string]Metric),
+}
 
 type ultraCDNCollector struct {
 	Client           *Client
@@ -59,46 +67,58 @@ func (c *ultraCDNCollector) Describe(ch chan<- *prometheus.Desc) {
 }
 
 func (c *ultraCDNCollector) Collect(ch chan<- prometheus.Metric) {
+	wg := sync.WaitGroup{}
 	for _, distGroup := range c.Client.DistGroups {
-		if cache[distGroup] == nil {
-			cache[distGroup] = map[string]Metric{}
+		cache.Lock()
+		if cache.c[distGroup] == nil {
+			cache.c[distGroup] = map[string]Metric{}
 		}
+		cache.Unlock()
 
 		for target, desc := range descs {
-			metric, err := c.Client.FetchMetric(distGroup.ID, target)
-			if err != nil {
-				log.Printf("error fetching Metric %s for distributiongroup %s: %v", target, distGroup.ID, err)
-				break
-			}
-
-			// If we can'target scrape metrics, we use the ones from cache to avoid a discontinued metric.
-			// If cache is empty, we use a 0 metric for the same reason.
-			if len(metric.Points) == 0 {
-				pp := cache[distGroup][target].Points
-				if len(pp) == 0 {
-					pp = []Point{{
-						Value:     float64(0.0),
-						Timestamp: int(time.Now().Unix()),
-					}}
+			wg.Add(1)
+			go func(distGroup DistributionGroup, target string, desc *prometheus.Desc) {
+				metric, err := c.Client.FetchMetric(distGroup.ID, target)
+				if err != nil {
+					log.Printf("error fetching Metric %s for distributiongroup %s: %v", target, distGroup.ID, err)
+					return
 				}
-				metric.Points = pp
-			}
 
-			// Cache latest entry
-			cache[distGroup][target] = metric
+				// If we can'target scrape metrics, we use the ones from cache to avoid a discontinued metric.
+				// If cache is empty, we use a 0 metric for the same reason.
+				if len(metric.Points) == 0 {
+					cache.RLock()
+					pp := cache.c[distGroup][target].Points
+					cache.RUnlock()
+					if len(pp) == 0 {
+						pp = []Point{{
+							Value:     float64(0.0),
+							Timestamp: int(time.Now().Unix()),
+						}}
+					}
+					metric.Points = pp
+				}
 
-			p := metric.Points[0]
-			m := prometheus.MustNewConstMetric(
-				desc,
-				prometheus.GaugeValue,
-				p.Value,
-				distGroup.Name, distGroup.ID)
+				// Cache latest entry
+				cache.Lock()
+				cache.c[distGroup][target] = metric
+				cache.Unlock()
 
-			if c.TimestampMetrics {
-				m = prometheus.NewMetricWithTimestamp(time.Unix(int64(p.Timestamp), 0), m)
-			}
+				p := metric.Points[0]
+				m := prometheus.MustNewConstMetric(
+					desc,
+					prometheus.GaugeValue,
+					p.Value,
+					distGroup.Name, distGroup.ID)
 
-			ch <- m
+				if c.TimestampMetrics {
+					m = prometheus.NewMetricWithTimestamp(time.Unix(int64(p.Timestamp), 0), m)
+				}
+
+				ch <- m
+				wg.Done()
+			}(distGroup, target, desc)
 		}
 	}
+	wg.Wait()
 }
