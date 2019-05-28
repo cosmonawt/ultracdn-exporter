@@ -1,4 +1,4 @@
-module github.com/Jodel/ultracdn-exporter
+module github.com/cosmonawt/ultracdn-exporter
 
 require (
 	github.com/prometheus/client_golang v0.9.2
