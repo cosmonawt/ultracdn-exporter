@@ -35,8 +35,8 @@ func main() {
 		TimestampMetrics: timestampMetrics,
 	}
 
-	// Call Login every hour to stay logged in.
-	relogin := time.NewTicker(60 * time.Minute)
+	// Call Login every 30 minutes to stay logged in.
+	relogin := time.NewTicker(30 * time.Minute)
 	quit := make(chan struct{})
 	go func() {
 		for {
