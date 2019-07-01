@@ -81,7 +81,6 @@ func (c *ultraCDNCollector) Collect(ch chan<- prometheus.Metric) {
 				metric, err := c.Client.FetchMetric(distGroup.ID, target)
 				if err != nil {
 					log.Printf("error fetching Metric %s for distributiongroup %s: %v", target, distGroup.ID, err)
-					return
 				}
 
 				// If we can'target scrape metrics, we use the ones from cache to avoid a discontinued metric.
