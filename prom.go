@@ -85,6 +85,8 @@ func (c *ultraCDNCollector) Collect(ch chan<- prometheus.Metric) {
 
 				// If we can'target scrape metrics, we use the ones from cache to avoid a discontinued metric.
 				// If cache is empty, we use a 0 metric for the same reason.
+				// We multiply the local timestamp by 1000 because leaseweb's timestamps are already in milliseconds
+				// Otherwise Prometheus will discard them if the timestamps differ in length
 				if len(metric.Points) == 0 {
 					cache.RLock()
 					pp := cache.c[distGroup][target].Points
@@ -92,7 +94,7 @@ func (c *ultraCDNCollector) Collect(ch chan<- prometheus.Metric) {
 					if len(pp) == 0 {
 						pp = []Point{{
 							Value:     float64(0.0),
-							Timestamp: int(time.Now().Unix()),
+							Timestamp: int(time.Now().Unix()) * 1000,
 						}}
 					}
 					metric.Points = pp
@@ -111,7 +113,7 @@ func (c *ultraCDNCollector) Collect(ch chan<- prometheus.Metric) {
 					distGroup.Name, distGroup.ID)
 
 				if c.TimestampMetrics {
-					m = prometheus.NewMetricWithTimestamp(time.Unix(int64(p.Timestamp), 0), m)
+					m = prometheus.NewMetricWithTimestamp(time.Unix(int64(p.Timestamp)/1000, 0), m)
 				}
 
 				ch <- m
