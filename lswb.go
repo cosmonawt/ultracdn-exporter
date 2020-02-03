@@ -46,7 +46,7 @@ func (c *Client) Login(username, password string) error {
 	if err != nil {
 		return fmt.Errorf("error getting customerID %v", err)
 	}
-	err = c.getDistributionGroups()
+	err = c.getMultiCDNDistributionGroups()
 	if err != nil {
 		return fmt.Errorf("error getting distributiongroups %v", err)
 	}
@@ -84,13 +84,13 @@ func (c *Client) getCustomerID() error {
 }
 
 type DistributionGroup struct {
-	Name   string `json:"name"`
-	ID     string `json:"id"`
-	Domain string `json:"domain"`
+	Description string `json:"description"`
+	ID          string `json:"id"`
+	Domain      string
 }
 
-func (c *Client) getDistributionGroups() error {
-	req, err := http.NewRequest(http.MethodGet, apiURL+"/"+c.customerID+"/config/distributiongroups", nil)
+func (c *Client) getMultiCDNDistributionGroups() error {
+	req, err := http.NewRequest(http.MethodGet, apiURL+"/configurations/"+c.customerID+"/distributions/multi-cdn/volume", nil)
 	if err != nil {
 		return fmt.Errorf("error creating request: %v", err)
 	}
@@ -106,14 +106,24 @@ func (c *Client) getDistributionGroups() error {
 	}
 
 	s := struct {
-		Response []DistributionGroup `json:"response"`
+		Response []struct {
+			DistributionGroup
+			Domains []string `json:"domains"`
+		} `json:"response"`
 	}{}
 
 	if err = json.NewDecoder(res.Body).Decode(&s); err != nil {
 		return fmt.Errorf("error decoding response: %v", err)
 	}
 
-	c.DistGroups = s.Response
+	if c.DistGroups == nil {
+		c.DistGroups = make([]DistributionGroup, len(s.Response))
+	}
+	for i, g := range s.Response {
+		g.DistributionGroup.Domain = g.Domains[0]
+		c.DistGroups[i] = g.DistributionGroup
+	}
+
 	return nil
 }
 
@@ -130,8 +140,8 @@ type Point struct {
 
 func (c *Client) FetchMetric(distributionGroupID, metricName string) (Metric, error) {
 	form := url.Values{}
-	// Leaseweb aggregates in 5 minute intervals and makes metrics available with a lag of 15 minutes,
-	// to make sure we dont scrape 0, we have a lag of 20 minutes.
+	// Leaseweb aggregates in 5 minute intervals and makes metrics available with a delay of 15 minutes.
+	// To make sure we dont scrape 0, we have a delay of 20 minutes.
 	form.Add("start", "-20min")
 	form.Add("end", "now")
 	form.Add("target", fmt.Sprintf("alias(aggregate(sum(%s.*.*.*.%s),'5min', 'sum', 'true'), '%[2]s')", distributionGroupID, metricName))
