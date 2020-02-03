@@ -140,10 +140,10 @@ type Point struct {
 
 func (c *Client) FetchMetric(distributionGroupID, metricName string) (Metric, error) {
 	form := url.Values{}
-	// Leaseweb aggregates in 5 minute intervals and makes metrics available with a delay of 15 minutes.
-	// To make sure we dont scrape 0, we have a delay of 20 minutes.
-	form.Add("start", "-20min")
-	form.Add("end", "now")
+	// Leaseweb aggregates in 5 minute intervals and makes metrics available with a delay of about 15 minutes.
+	// To make sure we dont scrape false 0, we have a delay of 30 minutes.
+	form.Add("start", "-30min")
+	form.Add("end", "-25min")
 	form.Add("target", fmt.Sprintf("alias(aggregate(sum(%s.*.*.*.%s),'5min', 'sum', 'true'), '%[2]s')", distributionGroupID, metricName))
 
 	req, err := http.NewRequest(http.MethodPost, apiURL+"/"+c.customerID+"/query", strings.NewReader(form.Encode()))
