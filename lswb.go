@@ -108,7 +108,8 @@ func (c *Client) getMultiCDNDistributionGroups() error {
 	s := struct {
 		Response []struct {
 			DistributionGroup
-			Domains []string `json:"domains"`
+			Domains  []string `json:"domains"`
+			Endpoint string   `json:"endpoint"`
 		} `json:"response"`
 	}{}
 
@@ -120,7 +121,13 @@ func (c *Client) getMultiCDNDistributionGroups() error {
 		c.DistGroups = make([]DistributionGroup, len(s.Response))
 	}
 	for i, g := range s.Response {
-		g.DistributionGroup.Domain = g.Domains[0]
+		var domain string
+		if len(g.Domains) < 1 {
+			domain = g.Endpoint
+		} else {
+			domain = g.Domains[0]
+		}
+		g.DistributionGroup.Domain = domain
 		c.DistGroups[i] = g.DistributionGroup
 	}
 
