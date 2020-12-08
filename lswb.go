@@ -117,9 +117,7 @@ func (c *Client) getMultiCDNDistributionGroups() error {
 		return fmt.Errorf("error decoding response: %v", err)
 	}
 
-	if c.DistGroups == nil {
-		c.DistGroups = make([]DistributionGroup, len(s.Response))
-	}
+	distGroups := make([]DistributionGroup, len(s.Response))
 	for i, g := range s.Response {
 		var domain string
 		if len(g.Domains) < 1 {
@@ -128,8 +126,9 @@ func (c *Client) getMultiCDNDistributionGroups() error {
 			domain = g.Domains[0]
 		}
 		g.DistributionGroup.Domain = domain
-		c.DistGroups[i] = g.DistributionGroup
+		distGroups[i] = g.DistributionGroup
 	}
+	c.DistGroups = distGroups
 
 	return nil
 }
